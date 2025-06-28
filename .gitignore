@@ -1,0 +1,5 @@
+myenv310/
+__pycache__/
+*.pkl
+*.pt
+*.mat
