@@ -110,14 +110,19 @@ Not included in repo (to keep size minimal), but supported:
 
 ## 📁 Project Structure
 
-CSI_Estimator_Wtih_MMSE/
-├── model.py # CNN, LSTM, Transformer modules
-├── dataset.py # CSI dataset generator (synthetic + DeepMIMO)
-├── mmse_baseline.py # MMSE channel estimator
-├── config.py # All config in one place
-├── main.py # Training pipeline & evaluation
-├── deepmimo_data.pkl # (optional) DeepMIMO-formatted CSI data
-└── README.md # This file
+CSI_Estimator_With_MMSE/
+├── main.py               # Training & evaluation pipeline
+├── model.py              # CNN / LSTM / Transformer model definitions
+├── dataset.py            # CSI dataset loader (Rayleigh / DeepMIMO)
+├── mmse_baseline.py      # MMSE estimator baseline
+├── config.py             # Centralized config parameters
+├── generate_deepmimo.py  # DeepMIMO data loader (CIR -> H format)
+├── README.md             # This file
+└── (git-ignored files)
+    ├── deepmimo_data.pkl       # Converted DeepMIMO data
+    ├── *.mat, *.pkl, *.pt      # Large data & model weights
+    ├── __pycache__/, myenv310/
+
 
 
 > ⚠️ `.pkl`, `.mat`, `myenv310/`, `__pycache__/`, `archive/` are git-ignored
