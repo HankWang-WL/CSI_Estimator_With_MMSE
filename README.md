@@ -78,20 +78,9 @@ Ĥ: (batch, N_rx, N_tx, L, 2)
 
 ---
 
-## 📈 Experimental Findings
+## 📊 Result Highlights
 
-* ✅ **CNN consistently outperformed MMSE** in both accuracy and latency
-* ❌ **LSTM & Transformer prone to instability** due to:
-
-  * Lack of temporal structure
-  * Overfitting via unstable attention
-* ✅ **CNN fastest on CUDA** (0.36ms/sample)
-* 🧨 **Dropout disabled → faster convergence** (data is clean enough)
-* 📱 **DeepMIMO training more effective than Rayleigh** due to spatial correlation
-
----
-
-## 🔍 Visualization Results
+### 🔁 Loss Curve (Train vs Val vs MMSE)
 
 | Dataset  | Model       | Loss Curve                                      | Heatmap                                       | 1-sample Comparison                                     |
 | -------- | ----------- | ----------------------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
@@ -101,6 +90,40 @@ Ĥ: (batch, N_rx, N_tx, L, 2)
 | DeepMIMO | CNN         | ![](results/DeepMIMO_cnn_LossCurve.png)         | ![](results/DeepMIMO_cnn_Heatmap.png)         | ![](results/DeepMIMO_cnn_1sampleComparison.png)         |
 | DeepMIMO | LSTM        | ![](results/DeepMIMO_lstm_LossCurve.png)        | ![](results/DeepMIMO_lstm_Heatmap.png)        | ![](results/DeepMIMO_lstm_1sampleComparison.png)        |
 | DeepMIMO | Transformer | ![](results/DeepMIMO_transformer_LossCurve.png) | ![](results/DeepMIMO_transformer_Heatmap.png) | ![](results/DeepMIMO_transformer_1sampleComparison.png) |
+
+### 📋 Performance Summary Table
+
+| Dataset  | Model       | Val MSE ↓  | MMSE MSE ↑ | Notes                                  |
+| -------- | ----------- | ---------- | ---------- | -------------------------------------- |
+| Rayleigh | CNN         | **0.0139** | 0.0295     | Best overall. Clean convergence.       |
+| Rayleigh | LSTM        | 0.0411     | 0.0296     | Poor fit. Lacks sequence structure.    |
+| Rayleigh | Transformer | 0.0184     | 0.0295     | Better than LSTM. Sudden recovery.     |
+| DeepMIMO | CNN         | **0.0040** | 0.0334     | 🏆 Best among all. Strong correlation. |
+| DeepMIMO | LSTM        | 0.0077     | 0.0331     | Good but weaker than Transformer.      |
+| DeepMIMO | Transformer | 0.0058     | 0.0331     | Better than LSTM. Smooth convergence.  |
+
+### 💡 Key Takeaways
+
+* **🧠 LSTM is not ideal for CSI**
+  LSTM performs poorly in Rayleigh where no temporal structure exists. Its training loss is low, but generalization fails — possible overfitting。
+
+* **⚡ Transformer surprises**
+  Rayleigh setting shows poor early performance, but sudden drop in val loss after epoch 8 shows attention adaptation. On DeepMIMO it converges smoothly and beats LSTM。
+
+* **🎯 CNN is best-in-class**
+  Lowest loss across all setups. Especially under DeepMIMO, it beats MMSE by nearly **10×** margin (MSE 0.0040 vs 0.0334)。
+
+* **💥 Dropout worsens fit**
+  Dropout introduces gap between train/val. Disabling it results in tighter convergence and better stability (observed in CNN)。
+
+---
+
+### ✅ Action Items
+
+* [ ] Add ResNet-based CSI Estimator
+* [ ] Conduct robustness test on longer pilot
+* [ ] Add multiple DeepMIMO scenarios (O1\_28, O2\_60)
+* [ ] Re-try Transformer with layer norm tuning
 
 ---
 
@@ -127,18 +150,16 @@ CSI_Estimator_With_MMSE/
 ├── mmse_baseline.py       # MMSE estimator baseline
 ├── config.py              # Centralized config parameters
 ├── generate_deepmimo.py   # DeepMIMO CIR -> H data converter
-├── run_all_combinations.py  # Run 3×2 experiments & auto-save plots
+├── run_all_combinations.py # Auto run 3x2 (model × dataset) experiments
 ├── README.md              # This file
 ├── .gitignore             # Git-ignored patterns
-└── (ignored files & folders)
-    ├── deepmimo_data.pkl         # Converted DeepMIMO data
-    ├── *.mat, *.pkl, *.pt        # Large data or model weights
-    ├── results/                  # Output images & logs
-    ├── __pycache__/             
-    └── myenv310/                # Virtual environment
-```
+└── results/               # 📊 All visual results (.png)
 
-> ⚠️ `.pkl`, `.mat`, `myenv310/`, `__pycache__/`, `archive/` are git-ignored
+Ignored:
+  ├── *.mat, *.pkl, *.pt         # Large data or model weights
+  ├── __pycache__/
+  └── myenv310/
+```
 
 ---
 
@@ -164,9 +185,28 @@ python generate_deepmimo.py
 
 ---
 
+## 📜 License
+
+This repository is released under the MIT License. You are free to use, copy, modify, and distribute this project for any purpose.
+
+```
+MIT License
+Copyright (c) 2025 Wang Chen Han
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the “Software”), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND.
+```
+
+---
+
 ## 👨‍💻 Author
 
 **Wang Chen Han（王振翰）**
-5G PHY Algorithm Engineer @ MediaTek
-GitHub: [https://github.com/HankWang-WL](https://github.com/HankWang-WL)
+5G PHY Algorithm Engineer
+GitHub: [github.com/HankWang-WL](https://github.com/HankWang-WL)
 Email: [hank851107@gmail.com](mailto:hank851107@gmail.com)
