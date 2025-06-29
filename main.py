@@ -3,6 +3,7 @@ from torch.utils.data import DataLoader, random_split
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
+import os
 
 from model import SimpleCSINet3D, LSTMCSINet, TransformerCSINet
 from dataset import CSIDataset
@@ -124,18 +125,6 @@ mse = sum(mmse_losses) / len(mmse_losses)
 print(f"MMSE Baseline MSE：{mse:.4f}")
 
 # ========== 6. 畫圖 ==========
-plt.figure(figsize=(8, 5))
-plt.plot(range(1, len(train_losses) + 1), train_losses, marker='o', label='Train Loss')
-plt.plot(range(1, len(val_losses) + 1), val_losses, marker='s', label='Validation Loss')
-plt.hlines(mse, 1, len(train_losses), colors='r', linestyles='dashed', label='MMSE Baseline')
-plt.xlabel("Epoch")
-plt.ylabel("MSE")
-plt.title("Performance: Train vs Validation vs MMSE Baseline")
-plt.legend()
-plt.grid(True)
-#plt.show()
-
-# ========== 7. h 和真實 h 的對比圖（只看一筆資料）========== 
 x, y, h, scale = next(iter(val_loader))
 input_xy = torch.cat([x, y], dim=-1)
 input_cnn = input_xy.permute(0, 4, 1, 2, 3).contiguous()
@@ -146,16 +135,37 @@ with torch.no_grad():
 true_h = h[0].numpy().reshape(num_rx, num_tx, pilot_length, 2)
 pred_h = pred_h[0].cpu().numpy().reshape(num_rx, num_tx, pilot_length, 2)
 
+# ========== 建立儲存資料夾 ==========
+save_dir = "results"
+os.makedirs(save_dir, exist_ok=True)
+
+# ========== 根據模型與資料類型設定前綴 ==========
+prefix = f"{'DeepMIMO' if USE_DEEPMIMO else 'Rayleigh'}_{model_type}"
+
+# ========== 圖 1: loss 曲線圖 ==========
+plt.figure(figsize=(8, 5))
+plt.plot(range(1, len(train_losses) + 1), train_losses, marker='o', label='Train Loss')
+plt.plot(range(1, len(val_losses) + 1), val_losses, marker='s', label='Validation Loss')
+plt.hlines(mse, 1, len(train_losses), colors='r', linestyles='dashed', label='MMSE Baseline')
+plt.xlabel("Epoch")
+plt.ylabel("MSE")
+plt.title("Performance: Train vs Validation vs MMSE Baseline")
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig(f"{save_dir}/{prefix}_LossCurve.png")
+
+# ========== 圖 2: 單筆資料真實 h vs 預測 h ==========
 plt.figure(figsize=(10, 4))
 plt.subplot(1, 2, 1)
-plt.plot(true_h[0, 0, :, 0],'o-', label='True h real')
-plt.plot(pred_h[0, 0, :, 0], 'x--',label='Pred h real')
+plt.plot(true_h[0, 0, :, 0], 'o-', label='True h real')
+plt.plot(pred_h[0, 0, :, 0], 'x--', label='Pred h real')
 plt.title('Real part (RX0 - TX0)')
 plt.legend()
 plt.grid(True)
 
 plt.subplot(1, 2, 2)
-plt.plot(true_h[0, 0, :, 1],'o-', label='True h imag')
+plt.plot(true_h[0, 0, :, 1], 'o-', label='True h imag')
 plt.plot(pred_h[0, 0, :, 1], 'x--', label='Pred h imag')
 plt.title('Imag part (RX0 - TX0)')
 plt.legend()
@@ -163,36 +173,50 @@ plt.grid(True)
 
 plt.suptitle('Channel Estimation: True vs Predicted (1 sample, RX0-TX0)')
 plt.tight_layout()
-#plt.show()
+plt.savefig(f"{save_dir}/{prefix}_1sampleComparison.png")
 
-#==========  8. 畫 heatmap 圖========== 
+# ========== 圖 3: Heatmap ==========
 plt.figure(figsize=(12, 5))
 
-# Real part heatmap
+# Real part heatmap - True
 plt.subplot(2, 2, 1)
-plt.imshow(true_h[:, :, :, 0].mean(axis=2), cmap='viridis', aspect='auto')
+real_true = true_h[:, :, :, 0].mean(axis=2)
+plt.imshow(real_true, cmap='viridis', aspect='auto')
+plt.xticks(ticks=range(num_tx), labels=range(num_tx))
+plt.yticks(ticks=range(num_rx), labels=range(num_rx))
 plt.colorbar()
 plt.title("True H Real (avg over pilot)")
 plt.xlabel("TX antenna")
 plt.ylabel("RX antenna")
 
+# Real part heatmap - Predicted
 plt.subplot(2, 2, 2)
-plt.imshow(pred_h[:, :, :, 0].mean(axis=2), cmap='viridis', aspect='auto')
+real_pred = pred_h[:, :, :, 0].mean(axis=2)
+plt.imshow(real_pred, cmap='viridis', aspect='auto')
+plt.xticks(ticks=range(num_tx), labels=range(num_tx))
+plt.yticks(ticks=range(num_rx), labels=range(num_rx))
 plt.colorbar()
 plt.title("Predicted H Real (avg over pilot)")
 plt.xlabel("TX antenna")
 plt.ylabel("RX antenna")
 
-# Imag part heatmap
+# Imag part heatmap - True
 plt.subplot(2, 2, 3)
-plt.imshow(true_h[:, :, :, 1].mean(axis=2), cmap='viridis', aspect='auto')
+imag_true = true_h[:, :, :, 1].mean(axis=2)
+plt.imshow(imag_true, cmap='viridis', aspect='auto')
+plt.xticks(ticks=range(num_tx), labels=range(num_tx))
+plt.yticks(ticks=range(num_rx), labels=range(num_rx))
 plt.colorbar()
 plt.title("True H Imag (avg over pilot)")
 plt.xlabel("TX antenna")
 plt.ylabel("RX antenna")
 
+# Imag part heatmap - Predicted
 plt.subplot(2, 2, 4)
-plt.imshow(pred_h[:, :, :, 1].mean(axis=2), cmap='viridis', aspect='auto')
+imag_pred = pred_h[:, :, :, 1].mean(axis=2)
+plt.imshow(imag_pred, cmap='viridis', aspect='auto')
+plt.xticks(ticks=range(num_tx), labels=range(num_tx))
+plt.yticks(ticks=range(num_rx), labels=range(num_rx))
 plt.colorbar()
 plt.title("Predicted H Imag (avg over pilot)")
 plt.xlabel("TX antenna")
@@ -200,4 +224,4 @@ plt.ylabel("RX antenna")
 
 plt.suptitle("Channel Matrix (Averaged Over Pilots)")
 plt.tight_layout()
-plt.show()
+plt.savefig(f"{save_dir}/{prefix}_Heatmap.png")
