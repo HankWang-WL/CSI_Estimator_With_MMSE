@@ -104,17 +104,19 @@ Ĥ: (batch, N_rx, N_tx, L, 2)
 
 ### 💡 Key Takeaways
 
-* **🧠 LSTM is not ideal for CSI**
-  LSTM performs poorly in Rayleigh where no temporal structure exists. Its training loss is low, but generalization fails — possible overfitting。
+- **🧠 LSTM is not overfitting – it's underfitting**  
+  Both in Rayleigh and DeepMIMO, **validation loss is lower than training loss**, showing no sign of overfitting. Instead, LSTM likely **underfits** due to a mismatch between architecture and data:  
+  - Rayleigh has no temporal correlation, making sequential modeling ineffective  
+  - Dropout might further suppress learning capacity
 
-* **⚡ Transformer surprises**
-  Rayleigh setting shows poor early performance, but sudden drop in val loss after epoch 8 shows attention adaptation. On DeepMIMO it converges smoothly and beats LSTM。
+- **⚡ Transformer surprises**  
+  In Rayleigh, the model initially plateaus but sharply improves after epoch 8, likely due to **late-stage attention adaptation**. In DeepMIMO, it converges more smoothly and **outperforms LSTM consistently**.
 
-* **🎯 CNN is best-in-class**
-  Lowest loss across all setups. Especially under DeepMIMO, it beats MMSE by nearly **10×** margin (MSE 0.0040 vs 0.0334)。
+- **🎯 CNN is best-in-class**  
+  Across all setups, 3D CNN performs the best with **fast convergence and strong generalization**. In DeepMIMO, it **beats MMSE by nearly 10× margin** (MSE: 0.0040 vs 0.0334).
 
-* **💥 Dropout worsens fit**
-  Dropout introduces gap between train/val. Disabling it results in tighter convergence and better stability (observed in CNN)。
+- **💥 Dropout worsens fit**  
+  Dropout leads to **train-val loss gaps**, especially in simpler models like CNN. Disabling dropout yields **faster convergence and tighter fit**, as verified in CNN experiments.
 
 ---
 
