@@ -1,5 +1,6 @@
 import os
 import subprocess
+import pprint
 
 combinations = [
     ('cnn', False),
@@ -28,12 +29,14 @@ for model, use_deepmimo in combinations:
         "device": "cuda"
     }
 
+    # 寫入格式良好的 config.py
     with open("config.py", "w") as f:
+        f.write("# Auto-generated config. Do not edit manually.\n")
         f.write("config = ")
-        f.write(repr(config))
+        pprint.pprint(config, stream=f)
 
     print(f"\n========== Running: model={model}, use_deepmimo={use_deepmimo} ==========")
     subprocess.run([
-    "c:/Users/user/Desktop/2025_resume/CSI_Estimator_Wtih_MMSE/myenv310/Scripts/python.exe", 
-    "main.py"
+        "c:/Users/user/Desktop/2025_resume/CSI_Estimator_Wtih_MMSE/myenv310/Scripts/python.exe", 
+        "main.py"
     ])

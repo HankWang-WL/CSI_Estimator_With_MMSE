@@ -3,4 +3,6 @@ __pycache__/
 *.pkl
 *.pt
 *.mat
+H_analysis/
+analyze_deepmimo.py
 

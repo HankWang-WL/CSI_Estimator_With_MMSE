@@ -14,7 +14,6 @@ class CSIDataset(torch.utils.data.Dataset):
 
         X, Y, H, scales = [], [], [], []
 
-        # 如果有 data_path 就讀取 DeepMIMO
         if data_path is not None:
             with open(data_path, 'rb') as f:
                 data = pickle.load(f)
@@ -35,52 +34,10 @@ class CSIDataset(torch.utils.data.Dataset):
                 raise ValueError("你的 DeepMIMO pickle 檔裡沒有任何 channel 資料！")
 
             for h in H_list:
-                if h.shape[-1] == 2:
-                    h_complex = h[..., 0] + 1j * h[..., 1]
-                    pilot_len = h.shape[-2]
-                else:
-                    h_complex = h
-                    pilot_len = h.shape[-1]
-
-                # Zadoff-Chu pilot
-                root = np.random.randint(1, pilot_len)
-                pilot = self.generate_zadoff_chu(pilot_len, root)
-                pilot_pair = np.stack([np.real(pilot), np.imag(pilot)], axis=1)
-
-                # broadcast pilot
-                expand_shape = [1] * (h_complex.ndim - 1) + [pilot_len]
-                pilot_broadcast = pilot.reshape(*expand_shape)
-                y = h_complex * pilot_broadcast
-
-                # 隨機 SNR
-                snr_db_sample = np.random.uniform(10, 30) if self.snr_db == "random" else self.snr_db
-                snr_linear = 10 ** (snr_db_sample / 10)
-                signal_power = np.mean(np.abs(y)**2)
-                noise_power = signal_power / snr_linear
-                noise_std = np.sqrt(noise_power / 2)
-                noise = np.random.randn(*y.shape) * noise_std + 1j * np.random.randn(*y.shape) * noise_std
-                y_noisy = y + noise
-
-                # IQ imbalance + 量化
-                y_noisy = self.add_iq_imbalance(y_noisy)
-                if self.quant_bits is not None:
-                    y_noisy = self.quantize_complex(y_noisy, bits=self.quant_bits)
-
-                h_pair = np.stack([np.real(h_complex), np.imag(h_complex)], axis=-1)
-                y_pair = np.stack([np.real(y_noisy), np.imag(y_noisy)], axis=-1)
-                x_pair = np.tile(pilot_pair, (*h_pair.shape[:-2], 1, 1))
-
-                h_pair, scale = self.normalize_channel(h_pair, return_scale=True)
-                y_pair = self.normalize_channel(y_pair)
-                x_pair = self.normalize_channel(x_pair)
-
-                X.append(x_pair)
-                Y.append(y_pair)
-                H.append(h_pair)
-                scales.append(scale)
+                for i in range(h.shape[0]):
+                    self.append_one_sample(h[i], X, Y, H, scales)
 
         else:
-            # 自創 Rayleigh channel 模擬
             for _ in range(num_samples):
                 x_sample = np.zeros((self.num_rx, self.num_tx, self.pilot_length, 2), dtype=np.float32)
                 y_sample = np.zeros_like(x_sample)
@@ -120,7 +77,6 @@ class CSIDataset(torch.utils.data.Dataset):
 
             scales = np.ones(len(X), dtype=np.float32)
 
-        # 最終轉換為 tensor
         self.X = torch.tensor(np.array(X), dtype=torch.float32)
         self.Y = torch.tensor(np.array(Y), dtype=torch.float32)
         self.H = torch.tensor(np.array(H), dtype=torch.float32)
@@ -131,6 +87,47 @@ class CSIDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         return self.X[idx], self.Y[idx], self.H[idx], self.scales[idx]
+
+    def append_one_sample(self, h, X, Y, H, scales):
+        if h.shape[-1] == 2:
+            h_complex = h[..., 0] + 1j * h[..., 1]
+            pilot_len = h.shape[-2]
+        else:
+            h_complex = h
+            pilot_len = h.shape[-1]
+
+        root = np.random.randint(1, pilot_len)
+        pilot = self.generate_zadoff_chu(pilot_len, root)
+        pilot_pair = np.stack([np.real(pilot), np.imag(pilot)], axis=1)
+
+        expand_shape = [1] * (h_complex.ndim - 1) + [pilot_len]
+        pilot_broadcast = pilot.reshape(*expand_shape)
+        y = h_complex * pilot_broadcast
+
+        snr_db_sample = np.random.uniform(10, 30) if self.snr_db == "random" else self.snr_db
+        snr_linear = 10 ** (snr_db_sample / 10)
+        signal_power = np.mean(np.abs(y)**2)
+        noise_power = signal_power / snr_linear
+        noise_std = np.sqrt(noise_power / 2)
+        noise = np.random.randn(*y.shape) * noise_std + 1j * np.random.randn(*y.shape) * noise_std
+        y_noisy = y + noise
+
+        y_noisy = self.add_iq_imbalance(y_noisy)
+        if self.quant_bits is not None:
+            y_noisy = self.quantize_complex(y_noisy, bits=self.quant_bits)
+
+        h_pair = np.stack([np.real(h_complex), np.imag(h_complex)], axis=-1)
+        y_pair = np.stack([np.real(y_noisy), np.imag(y_noisy)], axis=-1)
+        x_pair = np.tile(pilot_pair, (*h_pair.shape[:-2], 1, 1))
+
+        h_pair, scale = self.normalize_channel(h_pair, return_scale=True)
+        y_pair = self.normalize_channel(y_pair)
+        x_pair = self.normalize_channel(x_pair)
+
+        X.append(x_pair)
+        Y.append(y_pair)
+        H.append(h_pair)
+        scales.append(scale)
 
     def normalize_channel(self, h, return_scale=False):
         h_complex = h[..., 0] + 1j * h[..., 1]

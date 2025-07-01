@@ -1,30 +1,22 @@
 import torch
 
-def mmse_estimation(x, y, noise_var=0.01):
+def mmse_estimation(x, y, scale=None, noise_var=0.01, eps=1e-4):
     """
-    MMSE channel estimation baseline
-    適用於 Rayleigh fading + AWGN 通道模型，公式：
-        h_hat = conj(x) * y / (|x|^2 + noise_var)
-    
-    支援兩種輸入格式：
-    - x, y shape: [batch, pilot_length, 2]（SISO）
-    - x, y shape: [batch, num_rx, num_tx, pilot_length, 2]（MIMO）
-    
-    返回：
-    - h_hat: 預測的通道，shape 與 x, y 相同，最後一維為 [real, imag]
+    正確版本的 MMSE baseline，支援 Rayleigh 與 DeepMIMO：
+    - x, y shape: [B, num_rx, num_tx, pilot_len, 2]
+    - scale: 還原用的縮放因子
     """
-    # 將實數 + 虛數還原為複數形式
     x_c = x[..., 0] + 1j * x[..., 1]
     y_c = y[..., 0] + 1j * y[..., 1]
+    
+    denom = torch.abs(x_c) ** 2 + noise_var
+    denom = torch.clamp(denom, min=eps)  # 避免除以 0
 
-    # MMSE estimation 公式
-    h_hat_c = torch.conj(x_c) * y_c / (torch.abs(x_c)**2 + noise_var)
+    h_hat_c = torch.conj(x_c) * y_c / denom
+    h_hat = torch.stack([torch.real(h_hat_c), torch.imag(h_hat_c)], dim=-1)
 
-    # 拆解成 real / imag 結構
-    h_hat_real = torch.real(h_hat_c)
-    h_hat_imag = torch.imag(h_hat_c)
-
-    # 最後堆疊為 [real, imag] 形式
-    h_hat = torch.stack([h_hat_real, h_hat_imag], dim=-1)
+    if scale is not None:
+        view_shape = [x.shape[0]] + [1] * (h_hat.ndim - 1)
+        h_hat = h_hat / scale.view(*view_shape)  # 還原回原始尺度
 
     return h_hat

@@ -1,1 +1,15 @@
-config = {'use_deepmimo': True, 'data_path': 'deepmimo_data.pkl', 'num_rx': 4, 'num_tx': 4, 'pilot_length': 8, 'num_samples': 10000, 'model_type': 'transformer', 'batch_size': 32, 'train_epoch': 15, 'learning_rate': 0.0015, 'snr_db': 'random', 'quant_bits': 4, 'exp_decay': 0.5, 'device': 'cuda'}
+# Auto-generated config. Do not edit manually.
+config = {'batch_size': 32,
+ 'data_path': 'deepmimo_data.pkl',
+ 'device': 'cuda',
+ 'exp_decay': 0.5,
+ 'learning_rate': 0.0015,
+ 'model_type': 'transformer',
+ 'num_rx': 4,
+ 'num_samples': 10000,
+ 'num_tx': 4,
+ 'pilot_length': 8,
+ 'quant_bits': 4,
+ 'snr_db': 'random',
+ 'train_epoch': 15,
+ 'use_deepmimo': True}

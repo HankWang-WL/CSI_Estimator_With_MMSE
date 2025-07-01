@@ -1,22 +1,22 @@
 # 🛱 CSI Channel Estimation with Deep Learning
 
-This project benchmarks lightweight deep learning models (3D CNN, LSTM, Transformer) for CSI (Channel State Information) estimation in MIMO systems. It compares the performance with traditional MMSE under synthetic Rayleigh and DeepMIMO-generated channels.
+Channel State Information (CSI) Estimation in MIMO systems using lightweight deep learning models. This project implements compact neural networks (3D CNN, LSTM, Transformer) to estimate the channel matrix (H) from known pilot signals. These models significantly outperform a traditional MMSE estimator. Evaluation is conducted on two channel environments – a synthetic i.i.d. Rayleigh fading channel and a realistic DeepMIMO ray-tracing channel – to highlight generalization and robustness across channel conditions.
 
 ---
 
 ## 🧠 Project Highlights
 
-* 📶 **Supports both synthetic Rayleigh and DeepMIMO ray-tracing datasets**
-* 🧹 **Implements 3 model types**: 3D CNN, LSTM, Transformer
-* 🧪 **Compares with MMSE baseline** under realistic noise & distortion
-* 📊 **Includes visualizations**: heatmaps, per-antenna comparisons, loss curves
-* ⚙️ **Benchmarking on CUDA inference time**: practical deployment focus
+* 📶 **Multiple Channel Scenarios**: Supports synthetic Rayleigh fading (uncorrelated i.i.d. channels) and DeepMIMO ray-tracing data (real-world geometry with spatial correlation). This tests the models on both idealized and real-world channel characteristics.
+* 🧹 **Three Model Architectures**: Implemented 3D CNN, LSTM, and Transformer based estimators (each \~80K parameters) to learn CSI mapping from pilots.
+* 🧪 **MMSE Baseline Comparison**: Benchmarked against a traditional MMSE channel estimator under realistic conditions (varying SNR, hardware impairments) to quantify gains.
+* 📈 **Rich Visualizations**: Includes training loss curves, channel heatmaps (true vs. predicted H), and residual histograms of estimation error. These help interpret model performance per antenna and overall error distribution.
+* ⚡ **Deployment Focus**: Measured CUDA GPU inference time for each model (batch size 1 and 32) to assess real-time deployment feasibility.
 
 ---
 
 ## 🖐 System Model
 
-We estimate the MIMO channel matrix `H` using pilot signals `x`, with the received signal `y`:
+We aim to estimate the MIMO channel matrix **H** using known pilot **x** and observed signal **y** under AWGN:
 
 ```
 y = H · x + n
@@ -24,162 +24,212 @@ y = H · x + n
 
 Where:
 
-* `x`: known pilot symbol, shape `(N_tx × L)`
-* `y`: received signal at RX, shape `(N_rx × L)`
-* `H`: channel tensor, shape `(N_rx × N_tx × L × 2)` where the last dim is \[real, imag]
-* `n`: additive white Gaussian noise
+* **x**: known pilot symbol, shape (N\_tx × L)
+* **y**: received signal, shape (N\_rx × L)
+* **H**: channel matrix, shape (N\_rx, N\_tx, L, 2)
+* **n**: additive white Gaussian noise
 
-Each training sample represents **a single CSI frame**, consisting of `L=8` pilot subcarriers (not time steps), following real-world CSI-RS usage in OFDM.
+Each training sample represents a single CSI frame – we use L = 8 pilot subcarriers (spanning 8 frequencies in one OFDM symbol, similar to 5G NR CSI-RS patterns). The model learns to predict **Ĥ** (estimated H) from the input pair (x, y).
+
+*Intuition*: The channel matrix H describes how each transmit antenna’s signal propagates to each receive antenna. Our neural networks learn to recover this matrix from the distorted pilot signals received, effectively learning the complex gain and phase introduced by the channel.
+
+---
+
+## 🌐 Channel Modeling: Rayleigh vs DeepMIMO
+
+| Feature            | Rayleigh Channel                  | DeepMIMO (O1\_60)                          |
+| ------------------ | --------------------------------- | ------------------------------------------ |
+| Fading Model       | i.i.d. Complex Gaussian `CN(0,1)` | Ray-traced from real-world geometry        |
+| Multi-path effect  | No (single tap)                   | Yes (multiple paths with delay & AoA/AoD)  |
+| TX/RX correlation  | None                              | Present due to spatial layout              |
+| Temporal diversity | No (flat response across pilots)  | Yes (each pilot gets distinct path phases) |
+| Structure          | Uncorrelated, unstructured        | Geometrically constrained, structured      |
+| Use case           | Baseline sanity test              | Realistic deployment setting               |
+
+### 🔬 Power Delay Profile (PDP) Characteristics
+
+**Rayleigh channel** is generated with exponential decay per tap:
+
+```
+h_l ~ CN(0, σ² · e^(–α·l))
+```
+
+**DeepMIMO channel** aggregates multiple geometric paths:
+
+```
+H(f) = Σₚ √(Pₚ) · e^(–j·2π·f·τₚ) · e^(j·ϕₚ) · a_rxₚ · a_txₚᴴ
+```
+
+To introduce diversity across pilots, each path is perturbed with:
+
+* random carrier frequency phase
+* AoA/AoD steering response
+
+This makes each subcarrier carry **distinct spatial features**, allowing learning-based models to outperform MMSE.
 
 ---
 
 ## 🧪 Channel Data & Augmentations
 
-### Synthetic Rayleigh Channel
+We evaluate on two types of channel datasets, with on-the-fly augmentations to simulate real conditions:
 
-* Each element `h_{i,j}` \~ `CN(0, 1)`
-* i.i.d. fading with no TX/RX correlation
-* Simulates a "white" channel — ideal for testing generalization
+* **Synthetic Rayleigh Fading**: Each channel coefficient `h_{i,j} ~ CN(0,1)` (complex Gaussian). All antenna pairs are i.i.d. with no correlation – essentially a "white noise" channel. This provides a simple, uncorrelated scenario to test generalization.
 
-### DeepMIMO (O1\_60)
+* **DeepMIMO Ray-Tracing (O1\_60)**: Channels generated from a 3D ray-tracing scenario (DeepMIMO dataset). Multipath propagation and environment geometry create inherent TX/RX spatial correlation and structured channel taps. This represents a realistic urban microcell, challenging the model to exploit correlation and structure in the channel.
 
-* Geometry-based ray-tracing CSI from real-world layout
-* Inherent **TX/RX correlation**, shared multi-path structure
-* Useful to test model's ability to extract structured features
+* **Augmentations & Impairments**: To improve realism and robustness, each training sample applies random conditions:
 
-### Data Preprocessing & Augmentations
+  * **Random SNR (Signal-to-Noise Ratio)**: Uniform between 10–30 dB for each sample, adding appropriate noise power.
+  * **Random Pilot Sequence**: Uses Zadoff-Chu sequences with a random root index for each sample (simulating different pilot designs).
+  * **IQ Imbalance (optional)**: Can simulate transmitter/receiver IQ gain-phase imbalance on the signals.
+  * **1-bit Quantization Noise (optional)**: Optionally quantize signals to 1-bit (extreme case of ADC limitation).
 
-* Random SNR between 10–30 dB
-* Random Zadoff-Chu pilot root index
-* Optional IQ imbalance simulation
-* 1-bit quantization noise (optional)
+These augmentations ensure the models are exposed to a variety of conditions and are not overfitting to ideal scenarios.
 
 ---
 
 ## 🧠 Models Implemented
 
-| Model               | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `SimpleCSINet3D`    | 3D CNN over (rx, tx, pilot), \~80K params    |
-| `LSTMCSINet`        | Models pilot as a sequence, uses LSTM layers |
-| `TransformerCSINet` | Uses attention across subcarriers            |
+| Model                 | Description                                                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| **SimpleCSINet3D**    | 3D CNN that processes input as a volume across (Rx, Tx, pilots). \~80K params. Fast and effective for spatial features. |
+| **LSTMCSINet**        | Treats pilots as sequential input. Captures frequency correlation. Best when channel response has structure across L.   |
+| **TransformerCSINet** | Uses self-attention across pilot subcarriers. Learns global relationships among antennas and subcarriers.               |
 
-All models take input:
+**Input Format**: Each model receives input of shape `(batch, 4, N_rx, N_tx, L)`, where the 4 channels represent `[x_real, x_imag, y_real, y_imag]`. Real and imaginary parts of pilot and received signals are stacked along the channel dimension.
 
-```
-x_input: (batch, 4, N_rx, N_tx, L)  # 4 channels = [x_real, x_imag, y_real, y_imag]
-```
-
-Output:
-
-```
-Ĥ: (batch, N_rx, N_tx, L, 2)
-```
+**Output Format**: The model outputs a predicted channel tensor Ĥ of shape `(batch, N_rx, N_tx, L, 2)`, where the last dimension contains the real and imaginary components of the estimated channel matrix. Uses attention to model long-range pilot relationships |
 
 ---
 
-## 📊 Result Highlights
+## 📊 Results & Visualizations
 
-### 🔁 Loss Curve (Train vs Val vs MMSE)
+Below we present training results on both Rayleigh and DeepMIMO datasets for each model. We include:
 
-| Dataset  | Model       | Loss Curve                                      | Heatmap                                       | 1-sample Comparison                                     |
+- **Loss Curves**: Training vs. validation MSE loss across epochs. The dotted line indicates MMSE baseline.
+- **Heatmaps**: Visual comparison of true vs. predicted channel magnitudes for a selected sample.
+- **Residual Histograms**: Distribution of the element-wise difference between predicted and true channels.
+
+| Dataset  | Model       | Loss Curve                                      | Heatmap                                       | Residual Histogram                                      |
 | -------- | ----------- | ----------------------------------------------- | --------------------------------------------- | ------------------------------------------------------- |
-| Rayleigh | CNN         | ![](results/Rayleigh_cnn_LossCurve.png)         | ![](results/Rayleigh_cnn_Heatmap.png)         | ![](results/Rayleigh_cnn_1sampleComparison.png)         |
-| Rayleigh | LSTM        | ![](results/Rayleigh_lstm_LossCurve.png)        | ![](results/Rayleigh_lstm_Heatmap.png)        | ![](results/Rayleigh_lstm_1sampleComparison.png)        |
-| Rayleigh | Transformer | ![](results/Rayleigh_transformer_LossCurve.png) | ![](results/Rayleigh_transformer_Heatmap.png) | ![](results/Rayleigh_transformer_1sampleComparison.png) |
-| DeepMIMO | CNN         | ![](results/DeepMIMO_cnn_LossCurve.png)         | ![](results/DeepMIMO_cnn_Heatmap.png)         | ![](results/DeepMIMO_cnn_1sampleComparison.png)         |
-| DeepMIMO | LSTM        | ![](results/DeepMIMO_lstm_LossCurve.png)        | ![](results/DeepMIMO_lstm_Heatmap.png)        | ![](results/DeepMIMO_lstm_1sampleComparison.png)        |
-| DeepMIMO | Transformer | ![](results/DeepMIMO_transformer_LossCurve.png) | ![](results/DeepMIMO_transformer_Heatmap.png) | ![](results/DeepMIMO_transformer_1sampleComparison.png) |
+| Rayleigh | CNN         | ![](results/Rayleigh_cnn_LossCurve.png)         | ![](results/Rayleigh_cnn_Heatmap.png)         | ![](results/Rayleigh_cnn_ResidualHistogram.png)         |
+| Rayleigh | LSTM        | ![](results/Rayleigh_lstm_LossCurve.png)        | ![](results/Rayleigh_lstm_Heatmap.png)        | ![](results/Rayleigh_lstm_ResidualHistogram.png)        |
+| Rayleigh | Transformer | ![](results/Rayleigh_transformer_LossCurve.png) | ![](results/Rayleigh_transformer_Heatmap.png) | ![](results/Rayleigh_transformer_ResidualHistogram.png) |
+| DeepMIMO | CNN         | ![](results/DeepMIMO_cnn_LossCurve.png)         | ![](results/DeepMIMO_cnn_Heatmap.png)         | ![](results/DeepMIMO_cnn_ResidualHistogram.png)         |
+| DeepMIMO | LSTM        | ![](results/DeepMIMO_lstm_LossCurve.png)        | ![](results/DeepMIMO_lstm_Heatmap.png)        | ![](results/DeepMIMO_lstm_ResidualHistogram.png)        |
+| DeepMIMO | Transformer | ![](results/DeepMIMO_transformer_LossCurve.png) | ![](results/DeepMIMO_transformer_Heatmap.png) | ![](results/DeepMIMO_transformer_ResidualHistogram.png) |
 
-### 📋 Performance Summary Table
+**Figure Interpretation**:
 
-| Dataset  | Model       | Val MSE ↓  | MMSE MSE ↑ | Notes                                  |
-| -------- | ----------- | ---------- | ---------- | -------------------------------------- |
-| Rayleigh | CNN         | **0.0139** | 0.0295     | Best overall. Clean convergence.       |
-| Rayleigh | LSTM        | 0.0411     | 0.0296     | Poor fit. Lacks sequence structure.    |
-| Rayleigh | Transformer | 0.0184     | 0.0295     | Better than LSTM. Sudden recovery.     |
-| DeepMIMO | CNN         | **0.0040** | 0.0334     | 🏆 Best among all. Strong correlation. |
-| DeepMIMO | LSTM        | 0.0077     | 0.0331     | Good but weaker than Transformer.      |
-| DeepMIMO | Transformer | 0.0058     | 0.0331     | Better than LSTM. Smooth convergence.  |
+- In **loss curves**, a lower validation loss indicates better generalization. Dotted horizontal lines indicate MMSE baseline loss.
+- In **heatmaps**, more similar color patterns between prediction and ground truth imply better spatial reconstruction.
+- In **residual histograms**, an ideal model shows error distribution centered at 0 with tight spread (low variance).
 
-### 💡 Key Takeaways
+### 📋 Performance Summary Table (Val MSE vs MMSE)
 
-- **🧠 LSTM is not overfitting – it's underfitting**  
-  Both in Rayleigh and DeepMIMO, **validation loss is lower than training loss**, showing no sign of overfitting. Instead, LSTM likely **underfits** due to a mismatch between architecture and data:  
-  - Rayleigh has no temporal correlation, making sequential modeling ineffective  
-  - Dropout might further suppress learning capacity
+| Dataset  | Model       | Val MSE ↓  | MMSE MSE (Baseline) | Notes                                                                                   |
+|----------|-------------|------------|----------------------|-----------------------------------------------------------------------------------------|
+| Rayleigh | **CNN**     | **0.0144** | 0.0297               | Best overall on Rayleigh; clean and stable convergence.                                 |
+| Rayleigh | LSTM        | 0.0391     | 0.0295               | Underfits; sequential modeling ineffective for uncorrelated i.i.d. channels.            |
+| Rayleigh | Transformer | 0.0186     | 0.0298               | Improved performance after epoch 7; good generalization.                                |
+| DeepMIMO | **CNN**     | **0.0075** | 0.0369               | 🏆 **Best overall** (5× lower MSE than MMSE); highly effective at exploiting correlation.|
+| DeepMIMO | LSTM        | 0.0195     | 0.0373               | Performs reasonably well but less consistent than Transformer.                          |
+| DeepMIMO | Transformer | 0.0130     | 0.0375               | Strong results; benefits from structured multipath diversity.                           |
 
-- **⚡ Transformer surprises**  
-  In Rayleigh, the model initially plateaus but sharply improves after epoch 8, likely due to **late-stage attention adaptation**. In DeepMIMO, it converges more smoothly and **outperforms LSTM consistently**.
 
-- **🎯 CNN is best-in-class**  
-  Across all setups, 3D CNN performs the best with **fast convergence and strong generalization**. In DeepMIMO, it **beats MMSE by nearly 10× margin** (MSE: 0.0040 vs 0.0334).
 
-- **💥 Dropout worsens fit**  
-  Dropout leads to **train-val loss gaps**, especially in simpler models like CNN. Disabling dropout yields **faster convergence and tighter fit**, as verified in CNN experiments.
+### 🎯 Model Selection Insight
+
+💡 **Key Takeaways**
+
+- **LSTM Underfits (Not Overfitting)**  
+  The LSTM model shows validation loss lower than training loss in both Rayleigh and DeepMIMO scenarios, indicating no overfitting. Instead, it likely underfits due to an architecture-data mismatch:  
+  - The Rayleigh channel has no sequential structure (each subcarrier fading is independent), so LSTM’s time-series modeling offers little benefit.  
+  - Aggressive dropout further reduces capacity, leading to under-utilization of the model.
+
+- **Transformer Shows Delayed Gain**  
+  The Transformer model often plateaus early (e.g., Rayleigh), then improves significantly after ~7–8 epochs. This suggests attention weights need more time to adapt.  
+  - In DeepMIMO (with more inherent structure), Transformer converges smoothly and consistently outperforms LSTM.
+
+- **3D CNN Excels**  
+  Emerges as the best performer across both datasets. Achieves lowest MSE with stable, fast convergence.  
+  - Especially in DeepMIMO, CNN reduces MSE from MMSE's 0.0369 to 0.0075 — nearly **5× lower**, showing strong ability to capture spatial-frequency features.
+
+- **Dropout Impact**  
+  Dropout layers in CNN caused a noticeable train–val gap.  
+  - Removing dropout led to tighter convergence and better generalization, suggesting models weren’t overfitting and regularization was unnecessary.
+
 
 ---
+### ✅ Future Improvements (Action Items)
 
-### ✅ Action Items
+- **ResNet-based Estimator**  
+  Experiment with a ResNet-style deep CNN to explore whether skip connections can further improve estimation accuracy.
 
-* [ ] Add ResNet-based CSI Estimator
-* [ ] Conduct robustness test on longer pilot
-* [ ] Add multiple DeepMIMO scenarios (O1\_28, O2\_60)
-* [ ] Re-try Transformer with layer norm tuning
+- **Longer Pilot Sequences**  
+  Evaluate model robustness using longer pilot lengths (more subcarriers or time slots). This may allow LSTM/Transformer to leverage true sequential structure more effectively.
+
+- **More DeepMIMO Scenarios**  
+  Test on additional DeepMIMO scenes (e.g., O1_28, O2_60) to confirm generalization across different spatial layouts and carrier frequencies.
+
+- **Transformer Tuning**  
+  Adjust Transformer hyperparameters (e.g., insert LayerNorm, increase depth) to potentially close the performance gap with CNN on Rayleigh channels.
 
 ---
-
-## 🔬 Inference Benchmark (CUDA)
-
-| Model       | Batch Size | Inference Time (ms) |
-| ----------- | ---------- | ------------------- |
-| CNN         | 1          | 0.369               |
-| LSTM        | 1          | 0.439               |
-| Transformer | 1          | 0.828               |
-| CNN         | 32         | 0.499               |
-| LSTM        | 32         | 0.848               |
-| Transformer | 32         | 1.137               |
-
+## 🔬 Inference Time (CUDA, batch size = 1/32)
+We benchmarked the models' forward-pass inference latency on a single NVIDIA GPU (PyTorch, FP32). Even with similar parameter counts, architecture differences affect speed:
+| Model       | Inference Time (ms) |
+| ----------- | ------------------- |
+| CNN         | 0.37 / 0.50         |
+| LSTM        | 0.44 / 0.85         |
+| Transformer | 0.83 / 1.13         |
+Notes: The CNN is fastest, especially at batch=32 where it likely benefits from convolution parallelism. The Transformer is relatively slower due to attention computation overhead, which grows with sequence length (L=8 here is small, but still noticeable). LSTM is in between, but doesn’t scale as well to batch processing as CNN.
 ---
 
 ## 📁 Project Structure
 
 ```
 CSI_Estimator_With_MMSE/
-├── main.py                # Training & evaluation pipeline
-├── model.py               # CNN / LSTM / Transformer model definitions
-├── dataset.py             # CSI dataset loader (Rayleigh / DeepMIMO)
-├── mmse_baseline.py       # MMSE estimator baseline
-├── config.py              # Centralized config parameters
-├── generate_deepmimo.py   # DeepMIMO CIR -> H data converter
-├── run_all_combinations.py # Auto run 3x2 (model × dataset) experiments
-├── README.md              # This file
-├── .gitignore             # Git-ignored patterns
-└── results/               # 📊 All visual results (.png)
+├── main.py               # Training & evaluation pipeline (argument parsing, logging)
+├── model.py              # Model definitions for CNN, LSTM, Transformer
+├── dataset.py            # Dataset generator for Rayleigh and DeepMIMO channels
+├── mmse_baseline.py      # MMSE estimator implementation for comparison
+├── generate_deepmimo.py  # Script to generate DeepMIMO channel matrix data from DeepMIMO dataset files
+├── run_all_combinations.py # Helper to run all model/dataset experiments in batch
+├── config.py             # Centralized configuration (hyperparameters, flags)
+├── results/              # Folder for output plots (loss curves, heatmaps, histograms)
+│   ├── Rayleigh_cnn_LossCurve.png, ...           # Training/validation loss plots for each scenario
+│   ├── Rayleigh_cnn_Heatmap.png, ...             # Heatmap of true vs predicted H for a sample
+│   └── Rayleigh_cnn_ResidualHistogram.png, ...   # Histogram of estimation residuals
+├── README.md             # *You are here* – project overview and results
+└── (other files like *.mat, *.pkl, *.pt are git-ignored due to size)
 
-Ignored:
-  ├── *.mat, *.pkl, *.pt         # Large data or model weights
-  ├── __pycache__/
-  └── myenv310/
 ```
 
 ---
 
 ## 🚀 How to Run
 
-Install dependencies:
+Follow the steps below to set up and run the project:
+
+---
+
+### 1️️ Install Dependencies
+
+Make sure you're using **Python 3.8+**, then install the required packages:
 
 ```bash
 pip install torch numpy matplotlib
 ```
 
-Run training:
+---
 
-```bash
-python main.py
-```
+### 2️️ Prepare Data
 
-Use DeepMIMO:
+* For **Rayleigh**, no external data is needed.
+* For **DeepMIMO**, download the dataset (e.g., O1\_60 scenario) from the [DeepMIMO website](https://www.deepmimo.net/) and update the path in `config.py`.
+
+(Optional) To generate H matrix samples from CIR:
 
 ```bash
 python generate_deepmimo.py
@@ -187,28 +237,38 @@ python generate_deepmimo.py
 
 ---
 
-## 📜 License
+### 3️️ Train a Model
 
-This repository is released under the MIT License. You are free to use, copy, modify, and distribute this project for any purpose.
+Run the training script with desired configuration:
 
+```bash
+python main.py --model=cnn --dataset=rayleigh
+# options: --model=cnn/lstm/transformer
+#          --dataset=rayleigh/deepmimo
 ```
-MIT License
-Copyright (c) 2025 Wang Chen Han
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the “Software”), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software.
+Training progress and final metrics will be logged automatically.
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND.
+---
+
+### 4️️ Reproduce All Experiments
+
+To run all 3 models on both datasets and generate results used in the README:
+
+```bash
+python run_all_combinations.py
 ```
+
+Plots and metrics will be saved under the `results/` folder.
+
 
 ---
 
 ## 👨‍💻 Author
 
-**Wang Chen Han（王振翰）**
+**Wang Chen Han**
 5G PHY Algorithm Engineer
-GitHub: [github.com/HankWang-WL](https://github.com/HankWang-WL)
-Email: [hank851107@gmail.com](mailto:hank851107@gmail.com)
+[github.com/HankWang-WL](https://github.com/HankWang-WL)
+[hank851107@gmail.com](mailto:hank851107@gmail.com)
+
+

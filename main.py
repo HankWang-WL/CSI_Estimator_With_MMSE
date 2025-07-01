@@ -46,19 +46,6 @@ train_size = int(0.8 * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
 
-# 畫 h 值分布直方圖
-train_h = train_dataset.dataset.H[train_dataset.indices]
-val_h = val_dataset.dataset.H[val_dataset.indices]
-
-plt.figure(figsize=(8, 4))
-plt.hist(train_h.numpy().flatten(), bins=100, alpha=0.5, label='train')
-plt.hist(val_h.numpy().flatten(), bins=100, alpha=0.5, label='val')
-plt.legend()
-plt.title("h value distribution (train vs val)")
-plt.xlabel("h value")
-plt.ylabel("count")
-#plt.show()
-
 train_loader = DataLoader(train_dataset, batch_size=config["batch_size"], shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=config["batch_size"], shuffle=False)
 
@@ -113,16 +100,23 @@ for epoch in range(config["train_epoch"]):
 
     print(f"Epoch {epoch + 1}, Train Loss: {avg_loss:.4f}, Val Loss: {avg_val_loss:.4f}")
 
-# ========== 5. MMSE Baseline ==========
+# ========== 5. MMSE Baseline（正確版本） ==========
 mmse_losses = []
-for x, y, h, scale in val_loader:
-    h_mmse = mmse_estimation(x, y)
-    h_mmse = h_mmse / scale.view(-1, 1, 1, 1, 1)
-    loss = criterion(h_mmse, h)
-    mmse_losses.append(loss.item())
+model.eval()
+with torch.no_grad():
+    for x, y, h, scale in val_loader:
+        h_mmse = mmse_estimation(x, y)
 
+        # 還原 channel 大小
+        view_shape = [h.shape[0]] + [1] * (h.ndim - 1)
+
+        loss = criterion(h_mmse, h)  
+        mmse_losses.append(loss.item())  
+
+# ✅ 真正的平均 loss
 mse = sum(mmse_losses) / len(mmse_losses)
-print(f"MMSE Baseline MSE：{mse:.4f}")
+print(f"\n MMSE Baseline MSE（正確平均）：{mse:.4f}\n")
+
 
 # ========== 6. 畫圖 ==========
 x, y, h, scale = next(iter(val_loader))
@@ -155,25 +149,18 @@ plt.grid(True)
 plt.tight_layout()
 plt.savefig(f"{save_dir}/{prefix}_LossCurve.png")
 
-# ========== 圖 2: 單筆資料真實 h vs 預測 h ==========
-plt.figure(figsize=(10, 4))
-plt.subplot(1, 2, 1)
-plt.plot(true_h[0, 0, :, 0], 'o-', label='True h real')
-plt.plot(pred_h[0, 0, :, 0], 'x--', label='Pred h real')
-plt.title('Real part (RX0 - TX0)')
-plt.legend()
-plt.grid(True)
-
-plt.subplot(1, 2, 2)
-plt.plot(true_h[0, 0, :, 1], 'o-', label='True h imag')
-plt.plot(pred_h[0, 0, :, 1], 'x--', label='Pred h imag')
-plt.title('Imag part (RX0 - TX0)')
-plt.legend()
-plt.grid(True)
-
-plt.suptitle('Channel Estimation: True vs Predicted (1 sample, RX0-TX0)')
+# ========== 圖 2: 殘差分布圖==========
+plt.figure(figsize=(7, 4))
+residual = pred_h - true_h
+plt.hist(residual.flatten(), bins=80, color='steelblue', edgecolor='black', alpha=0.75)
+plt.title("Residual Distribution (Predicted - True)", fontsize=14)
+plt.xlabel("Prediction Error", fontsize=12)
+plt.ylabel("Count", fontsize=12)
+plt.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
 plt.tight_layout()
-plt.savefig(f"{save_dir}/{prefix}_1sampleComparison.png")
+plt.savefig(f"{save_dir}/{prefix}_ResidualHistogram.png")
+
+
 
 # ========== 圖 3: Heatmap ==========
 plt.figure(figsize=(12, 5))
@@ -225,3 +212,4 @@ plt.ylabel("RX antenna")
 plt.suptitle("Channel Matrix (Averaged Over Pilots)")
 plt.tight_layout()
 plt.savefig(f"{save_dir}/{prefix}_Heatmap.png")
+
