@@ -31,6 +31,7 @@ After extensive benchmarking, the CNN-based estimator emerges as the best choice
 - ✅ Strong generalization even under varying SNR and channel conditions
 
 This shows that a well-designed, compact CNN architecture not only simplifies deployment but also delivers state-of-the-art performance.
+
 ---
 ## 🖐 System Model
 
@@ -47,7 +48,8 @@ Where:
 - **H**: channel matrix, shape `(N_rx × N_tx × L × 2)` — complex-valued channel coefficients  
 - **n**: additive white Gaussian noise
 
-Each training sample represents a single CSI frame – we use L = 8 pilot subcarriers (spanning 8 frequencies in one OFDM symbol, similar to 5G NR CSI-RS patterns). The model learns to predict **Ĥ** (estimated H) from the input pair (x, y).
+Each training sample represents a single CSI frame – we use L = 8 pilot subcarriers (spanning 8 frequencies in one OFDM symbol, similar to 5G NR CSI-RS patterns). Internally, the real and imaginary parts of 𝑥 and 
+𝑦 are separated and stacked as 4 input channels. The model learns to predict **Ĥ** (estimated H) from the input pair (x, y).
 
 *Intuition*: The channel matrix H describes how each transmit antenna’s signal propagates to each receive antenna. Our neural networks learn to recover this matrix from the distorted pilot signals received, effectively learning the complex gain and phase introduced by the channel.
 
@@ -125,7 +127,7 @@ These augmentations ensure the models are exposed to a variety of conditions and
 
 **Input Format**: Each model receives input of shape `(batch, 4, N_rx, N_tx, L)`, where the 4 channels represent `[x_real, x_imag, y_real, y_imag]`. Real and imaginary parts of pilot and received signals are stacked along the channel dimension.
 
-**Output Format**: The model outputs a predicted channel tensor Ĥ of shape `(batch, N_rx, N_tx, L, 2)`, where the last dimension contains the real and imaginary components of the estimated channel matrix. Uses attention to model long-range pilot relationships |
+**Output Format**: The model outputs a predicted channel tensor Ĥ of shape `(batch, N_rx, N_tx, L, 2)`, where the last dimension contains the real and imaginary components of the estimated channel matrix. 
 
 ---
 
@@ -163,7 +165,7 @@ Below we present training results on both Rayleigh and DeepMIMO datasets for eac
 | DeepMIMO | LSTM        | 0.0195     | 0.0373               | Performs reasonably well but less consistent than Transformer.                          |
 | DeepMIMO | Transformer | 0.0130     | 0.0375               | Strong results; benefits from structured multipath diversity.                           |
 
-
+➡️ Across all evaluations, the 3D CNN consistently outperforms both LSTM and Transformer in accuracy and latency, making it the most practical choice for real-world deployment.
 
 ### 🎯 Model Selection Insight
 
@@ -210,7 +212,11 @@ We benchmarked the models' forward-pass inference latency on a single NVIDIA GPU
 | CNN         | 0.37 / 0.50         |
 | LSTM        | 0.44 / 0.85         |
 | Transformer | 0.83 / 1.13         |
+
 Notes: The CNN is fastest, especially at batch=32 where it likely benefits from convolution parallelism. The Transformer is relatively slower due to attention computation overhead, which grows with sequence length (L=8 here is small, but still noticeable). LSTM is in between, but doesn’t scale as well to batch processing as CNN.
+
+**Conclusion**: CNN achieves the best trade-off between speed and accuracy, especially under batched inference conditions.
+
 ---
 
 ## 📁 Project Structure
