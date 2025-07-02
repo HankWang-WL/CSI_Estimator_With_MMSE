@@ -13,7 +13,25 @@ Channel State Information (CSI) Estimation in MIMO systems using lightweight dee
 * ⚡ **Deployment Focus**: Measured CUDA GPU inference time for each model (batch size 1 and 32) to assess real-time deployment feasibility.
 
 ---
+## 🧩 Design Highlights & Summary
 
+This project demonstrates that a lightweight **2-layer 3D CNN** is sufficient to outperform traditional MMSE estimators and deeper models like LSTM and Transformer in both accuracy and inference time. The CNN architecture is carefully selected for:
+
+- **Practical Deployability**: With only two 3D convolutional layers and a final 1×1×1 output convolution, the model remains extremely lightweight (~80K parameters) and well-suited for edge deployment.
+
+- **Architecture Comparison**:
+  - **CNN**: 2 Conv3D layers + ReLU + final Conv3D(1×1×1)
+  - **LSTM**: 2-layer LSTM + 1 FC layer
+  - **Transformer**: 2 Transformer encoder blocks + 1 FC layer
+
+After extensive benchmarking, the CNN-based estimator emerges as the best choice:
+
+- ✅ Lowest validation MSE across both Rayleigh and DeepMIMO channels  
+- ✅ Fastest inference speed on GPU (0.37ms at batch=1)  
+- ✅ Strong generalization even under varying SNR and channel conditions
+
+This shows that a well-designed, compact CNN architecture not only simplifies deployment but also delivers state-of-the-art performance.
+---
 ## 🖐 System Model
 
 We aim to estimate the MIMO channel matrix **H** using known pilot **x** and observed signal **y** under AWGN:
@@ -24,10 +42,10 @@ y = H · x + n
 
 Where:
 
-* **x**: known pilot symbol, shape (N\_tx × L)
-* **y**: received signal, shape (N\_rx × L)
-* **H**: channel matrix, shape (N\_rx, N\_tx, L, 2)
-* **n**: additive white Gaussian noise
+- **x**: known pilot symbols, shape `(N_tx × L × 2)` — includes real and imaginary parts  
+- **y**: received signal, shape `(N_rx × L × 2)` — includes real and imaginary parts  
+- **H**: channel matrix, shape `(N_rx × N_tx × L × 2)` — complex-valued channel coefficients  
+- **n**: additive white Gaussian noise
 
 Each training sample represents a single CSI frame – we use L = 8 pilot subcarriers (spanning 8 frequencies in one OFDM symbol, similar to 5G NR CSI-RS patterns). The model learns to predict **Ĥ** (estimated H) from the input pair (x, y).
 
@@ -45,7 +63,6 @@ Each training sample represents a single CSI frame – we use L = 8 pilot subcar
 | Temporal diversity | No (flat response across pilots)  | Yes (each pilot gets distinct path phases) |
 | Structure          | Uncorrelated, unstructured        | Geometrically constrained, structured      |
 | Use case           | Baseline sanity test              | Realistic deployment setting               |
-
 ### 🔬 Power Delay Profile (PDP) Characteristics
 
 **Rayleigh channel** is generated with exponential decay per tap:
@@ -60,12 +77,21 @@ h_l ~ CN(0, σ² · e^(–α·l))
 H(f) = Σₚ √(Pₚ) · e^(–j·2π·f·τₚ) · e^(j·ϕₚ) · a_rxₚ · a_txₚᴴ
 ```
 
+Where:
+
+* Pₚ: power of the p-th propagation path
+* τₚ: delay of the p-th path
+* ϕₚ: random phase shift of the p-th path
+* a\_rxₚ: receive array steering vector
+* a\_txₚᴴ: transmit array steering vector (Hermitian)
+
 To introduce diversity across pilots, each path is perturbed with:
 
 * random carrier frequency phase
 * AoA/AoD steering response
 
 This makes each subcarrier carry **distinct spatial features**, allowing learning-based models to outperform MMSE.
+
 
 ---
 
@@ -82,7 +108,8 @@ We evaluate on two types of channel datasets, with on-the-fly augmentations to s
   * **Random SNR (Signal-to-Noise Ratio)**: Uniform between 10–30 dB for each sample, adding appropriate noise power.
   * **Random Pilot Sequence**: Uses Zadoff-Chu sequences with a random root index for each sample (simulating different pilot designs).
   * **IQ Imbalance (optional)**: Can simulate transmitter/receiver IQ gain-phase imbalance on the signals.
-  * **1-bit Quantization Noise (optional)**: Optionally quantize signals to 1-bit (extreme case of ADC limitation).
+  * **4-bit Quantization Noise (optional)**: Quantize the input signal to 4-bit resolution to simulate ADC constraints.
+
 
 These augmentations ensure the models are exposed to a variety of conditions and are not overfitting to ideal scenarios.
 
