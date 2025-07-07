@@ -211,6 +211,12 @@ Below we present training results on both Rayleigh and DeepMIMO datasets for eac
 - **Transformer Tuning**  
   Adjust Transformer hyperparameters (e.g., insert LayerNorm, increase depth) to potentially close the performance gap with CNN on Rayleigh channels.
 
+- **TensorRT Plugin Optimization**  
+  Explore custom TensorRT plugins (e.g., fused 3D convolution + ReLU) to reduce inference overhead on low-end GPUs like GTX1060.
+
+- **Quantization & FP16/INT8 Deployment**  
+  Explore FP16 and INT8 post-training quantization to reduce latency and memory footprint, enabling real-time CSI estimation on edge devices.
+
 ---
 ## 🔬 Inference Time (CUDA, batch size = 1/32)
 We benchmarked the models' forward-pass inference latency on a single NVIDIA GPU (PyTorch, FP32). Even with similar parameter counts, architecture differences affect speed:
