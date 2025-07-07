@@ -7,17 +7,20 @@ Channel State Information (CSI) Estimation in MIMO systems using lightweight dee
 ## 🧠 Project Highlights
 
 * 📶 **Multiple Channel Scenarios**: Supports synthetic Rayleigh fading (uncorrelated i.i.d. channels) and DeepMIMO ray-tracing data (real-world geometry with spatial correlation). This tests the models on both idealized and real-world channel characteristics.
-* 🧹 **Three Model Architectures**: Implemented 3D CNN, LSTM, and Transformer based estimators (each \~80K parameters) to learn CSI mapping from pilots.
+* 🧹 **Three Model Architectures**: Implemented 3D CNN, LSTM, and Transformer based estimators (each \~18K parameters) to learn CSI mapping from pilots.
 * 🧪 **MMSE Baseline Comparison**: Benchmarked against a traditional MMSE channel estimator under realistic conditions (varying SNR, hardware impairments) to quantify gains.
-* 📈 **Rich Visualizations**: Includes training loss curves, channel heatmaps (true vs. predicted H), and residual histograms of estimation error. These help interpret model performance per antenna and overall error distribution.
 * ⚡ **Deployment Focus**: Measured CUDA GPU inference time for each model (batch size 1 and 32) to assess real-time deployment feasibility.
+* 🚀 **TensorRT Deployment Pipeline**: Exported the CNN model to ONNX and compiled a `.engine` using TensorRT (FP16, SM61 compatibility). Completed full inference with custom bindings, memory setup, and latency benchmark under edge-device constraints.
+* 📈 **Rich Visualizations**: Includes training loss curves, channel heatmaps (true vs. predicted H), and residual histograms of estimation error. These help interpret model performance per antenna and overall error distribution.
 
 ---
+
 ## 🧩 Design Highlights & Summary
 
 This project demonstrates that a lightweight **2-layer 3D CNN** is sufficient to outperform traditional MMSE estimators and deeper models like LSTM and Transformer in both accuracy and inference time. The CNN architecture is carefully selected for:
 
-- **Practical Deployability**: With only two 3D convolutional layers and a final 1×1×1 output convolution, the model remains extremely lightweight (~80K parameters) and well-suited for edge deployment.
+- **Practical Deployability**: With only two 3D convolutional layers and a final 1×1×1 output convolution, the model remains extremely lightweight and well-suited for edge deployment.  
+  **Among all models, CNN has the fewest parameters (~18K), significantly reducing memory and computation requirements.**
 
 - **Architecture Comparison**:
   - **CNN**: 2 Conv3D layers + ReLU + final Conv3D(1×1×1)
@@ -28,7 +31,8 @@ After extensive benchmarking, the CNN-based estimator emerges as the best choice
 
 - ✅ Lowest validation MSE across both Rayleigh and DeepMIMO channels  
 - ✅ Fastest inference speed on GPU (0.37ms at batch=1)  
-- ✅ Strong generalization even under varying SNR and channel conditions
+- ✅ Strong generalization even under varying SNR and channel conditions  
+- ✅ Smallest model size (~18K parameters), ideal for edge or embedded deployment
 
 This shows that a well-designed, compact CNN architecture not only simplifies deployment but also delivers state-of-the-art performance.
 
@@ -119,15 +123,18 @@ These augmentations ensure the models are exposed to a variety of conditions and
 
 ## 🧠 Models Implemented
 
-| Model                 | Description                                                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| **SimpleCSINet3D**    | 3D CNN that processes input as a volume across (Rx, Tx, pilots). \~80K params. Fast and effective for spatial features. |
-| **LSTMCSINet**        | Treats pilots as sequential input. Captures frequency correlation. Best when channel response has structure across L.   |
-| **TransformerCSINet** | Uses self-attention across pilot subcarriers. Learns global relationships among antennas and subcarriers.               |
+| Model                 | Description                                                                                                           | Parameter Count |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------- | --------------- |
+| **SimpleCSINet3D**    | 3D CNN that processes input as a volume across (Rx, Tx, pilots). Fast and effective for spatial features.             | 🏆**18,490**      |
+| **LSTMCSINet**        | Treats pilots as sequential input. Captures frequency correlation. Best when channel response has structure across L. | 235,552         |
+| **TransformerCSINet** | Uses self-attention across pilot subcarriers. Learns global relationships among antennas and subcarriers.             | 537,760         |
 
 **Input Format**: Each model receives input of shape `(batch, 4, N_rx, N_tx, L)`, where the 4 channels represent `[x_real, x_imag, y_real, y_imag]`. Real and imaginary parts of pilot and received signals are stacked along the channel dimension.
 
 **Output Format**: The model outputs a predicted channel tensor Ĥ of shape `(batch, N_rx, N_tx, L, 2)`, where the last dimension contains the real and imaginary components of the estimated channel matrix. 
+
+Conclusion:
+Among all models, the 3D CNN has the lowest parameter count (18K) while achieving the best trade-off between accuracy and latency. This lightweight nature makes it ideal for real-time CSI estimation and hardware deployment, especially under edge-device constraints.
 
 ---
 
@@ -216,6 +223,61 @@ We benchmarked the models' forward-pass inference latency on a single NVIDIA GPU
 Notes: The CNN is fastest, especially at batch=32 where it likely benefits from convolution parallelism. The Transformer is relatively slower due to attention computation overhead, which grows with sequence length (L=8 here is small, but still noticeable). LSTM is in between, but doesn’t scale as well to batch processing as CNN.
 
 **Conclusion**: CNN achieves the best trade-off between speed and accuracy, especially under batched inference conditions.
+
+## 🚀 TensorRT Inference Deployment (CNN only)
+
+To further demonstrate deployment feasibility, we convert the trained CNN model to a TensorRT engine on a **GTX 1060 (3GB)** using NVIDIA’s inference toolkit.
+
+       [ DeepMIMO Data (.pkl) ]
+                  ↓
+       [Data Loader: CSIDataset]
+                  ↓
+      [x, y] + [Ground Truth H]
+                  ↓
+             Trained CNN              
+                  ↓                     
+           Export to ONNX               
+                  ↓                     
+     Build TensorRT Engine (.engine)    
+                  ↓                     
+        Inference with TensorRT         
+                  ↓                     
+       Save CNN TorchRT Latency
+### 📤 Export to ONNX
+
+The trained CNN model is exported to ONNX format via:
+
+```python
+torch.onnx.export(model, dummy_input, "cnn_model.onnx", export_params=True, opset_version=11)
+```
+
+### 🛠️ Build TensorRT Engine
+
+We then convert it using TensorRT 8.6.1 (Windows, CUDA 12):
+
+```bash
+trtexec --onnx=cnn_model.onnx --saveEngine=cnn_model.engine --explicitBatch
+```
+
+The resulting `.engine` file is optimized for the target hardware (GTX1060 SM61).
+Inference script handles shape, format, and memory bindings with the TensorRT Python API.
+
+### 📉 Inference Latency (TensorRT, CNN only)
+
+| Framework | Batch Size | Latency (ms) |
+| --------- | ---------- | ------------ |
+| TensorRT  | 1          | **1.86**     |
+| TensorRT  | 32         | **1.36**     |
+
+> ⚠️ Only the CNN model is exported to TensorRT due to its lightweight structure.
+> LSTM and Transformer are not deployed due to ONNX export instability and complexity in sequential/attention modeling.
+
+This confirms CNN’s suitability for **real-time CSI estimation** under edge-device constraints.
+The full deployment pipeline was implemented with reference to NVIDIA official documentation and manually adapted for inference compatibility (e.g., input formatting, output reshaping, memory bindings).
+
+Although TensorRT is expected to accelerate inference, the latency on GTX1060 (SM61) is slightly higher than PyTorch due to limited hardware acceleration, Python binding overhead, and model simplicity. On modern GPUs with better Tensor Core support, TensorRT would outperform PyTorch.
+
+🔧 Note: The full TensorRT deployment code is omitted from GitHub due to hardware-specific configurations (GTX 1060 SM61, CUDA 12). The benchmark results are provided for reference only.
 
 ---
 
