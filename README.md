@@ -283,7 +283,8 @@ Inference script handles shape, format, and memory bindings with the TensorRT Py
 This confirms CNN’s suitability for **real-time CSI estimation** under edge-device constraints.
 The full deployment pipeline was implemented with reference to NVIDIA official documentation and manually adapted for inference compatibility (e.g., input formatting, output reshaping, memory bindings).
 
-Although TensorRT is expected to accelerate inference, the latency on GTX1060 (SM61) is slightly higher than PyTorch due to limited hardware acceleration, Python binding overhead, and model simplicity. On modern GPUs with better Tensor Core support, TensorRT would outperform PyTorch.
+Although TensorRT typically accelerates inference significantly, the measured latency on GTX 1060 (SM61) was slightly higher compared to native PyTorch inference. This performance drop is primarily due to the GTX 1060's limited hardware acceleration for FP16 operations, Python API binding overhead, and the simplicity of the CNN model (fewer optimization opportunities). On newer GPUs with enhanced Tensor Core support, TensorRT inference is expected to substantially outperform PyTorch.
+
 
 🔧 Note: The full TensorRT deployment code is omitted from GitHub due to hardware-specific configurations (GTX 1060 SM61, CUDA 12). The benchmark results are provided for reference only.
 
