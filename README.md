@@ -1,6 +1,8 @@
 # 🛱 CSI Channel Estimation with Deep Learning
 
-Channel State Information (CSI) Estimation in MIMO systems using lightweight deep learning models. This project implements compact neural networks (3D CNN, LSTM, Transformer) to estimate the channel matrix (H) from known pilot signals. These models significantly outperform a traditional MMSE estimator. Evaluation is conducted on two channel environments – a synthetic i.i.d. Rayleigh fading channel and a realistic DeepMIMO ray-tracing channel – to highlight generalization and robustness across channel conditions.
+Channel State Information (CSI) estimation in MIMO systems using lightweight deep learning models. Unlike typical approaches relying solely on off-the-shelf datasets and standard model architectures, this project was developed entirely from scratch—from dataset generation and preprocessing to customized neural network design and optimized inference pipelines.  
+Specifically, I implemented compact neural networks (3D CNN, LSTM, Transformer) tailored explicitly for estimating the channel matrix (H) from known pilot signals. Through extensive experiments, data augmentations, and realistic hardware impairments, these models consistently outperformed traditional MMSE estimators. Evaluations covered both synthetic i.i.d. Rayleigh fading channels and realistic DeepMIMO ray-tracing scenarios, demonstrating exceptional model generalization and robustness under diverse real-world conditions.
+
 
 ---
 
@@ -286,6 +288,95 @@ Although TensorRT is expected to accelerate inference, the latency on GTX1060 (S
 🔧 Note: The full TensorRT deployment code is omitted from GitHub due to hardware-specific configurations (GTX 1060 SM61, CUDA 12). The benchmark results are provided for reference only.
 
 ---
+
+## ⚠️ Challenges & Solutions
+
+Throughout the CSI estimation project, several technical issues arose during data preprocessing, model training, and deployment phases. The following summarizes the major challenges and corresponding solutions that were critical to achieving successful implementation and robust inference results:
+
+### 1️⃣ DeepMIMO Version Compatibility Issues
+
+- **Challenge:**  
+  The dataset generated using **DeepMIMO v3** was consistently empty or incorrect, despite numerous attempts to extract and reshape the underlying `.mat` file data.
+
+- **Solution:**  
+  A detailed examination of published papers and forums revealed widespread use of **DeepMIMO v2** for CSI estimation benchmarks. Switching to v2 immediately resolved data extraction problems and produced valid training datasets.
+
+> **Lesson Learned:**  
+> Always verify dataset versions referenced in literature or benchmarks, as subtle dataset version differences can significantly affect output.
+
+---
+
+### 2️⃣ Complex Preprocessing and Data Verification (DeepMIMO)
+
+- **Challenge:**  
+  DeepMIMO dataset features complex nested arrays and physical channel parameters (e.g., AoA/AoD, delays, power profiles). Initial preprocessing attempts frequently resulted in shape mismatches or physically incorrect channels, severely impacting training effectiveness.
+
+- **Solution:**  
+  - Implemented a custom `.mat` file inspection script (`generate_deepmimo.py`) for accurate visualization of internal data structures.
+  - Conducted iterative reshaping validation and sanity checks (e.g., Power Delay Profile visualization) ensuring physical correctness prior to ML model ingestion.
+
+> **Lesson Learned:**  
+> Comprehensive data verification and structured preprocessing are essential, especially with physically realistic datasets. Incremental validation prevents subtle but severe errors downstream.
+
+---
+
+### 3️⃣ Enhancing ML Performance Beyond MMSE Baseline
+
+- **Challenge:**  
+  Initial ML training consistently underperformed against the MMSE baseline, particularly on the simplistic synthetic Rayleigh channel, which lacked structured spatial correlation.
+
+- **Solution:**  
+  - Transitioned to **DeepMIMO** ray-traced channels, introducing spatial structure exploitable by neural networks.
+  - Applied realistic data augmentation and impairments:
+    - **Randomized SNR levels** (10–30 dB range)
+    - Simulated **4-bit quantization noise** (ADC limitations)
+    - Randomized **IQ imbalances** (amplitude & phase shifts)
+    - Varied **pilot sequence indices** (Zadoff-Chu roots)
+  
+  These augmentations increased training difficulty yet substantially boosted generalization and performance.
+
+> **Lesson Learned:**  
+> Introducing realistic impairments and structured variability forces ML models to generalize more effectively, enabling significant improvements over classical benchmarks like MMSE.
+
+---
+
+### 4️⃣ TensorRT and ONNX Compatibility Issues (GTX 1060, CUDA 12)
+
+- **Challenge:**  
+  Exporting and running the CNN model on TensorRT posed several compatibility problems specific to the GTX 1060 (SM61 architecture) environment:
+  
+  - **TensorRT and CUDA version incompatibility**: 
+    - CUDA 12 environment initially conflicted with TensorRT (e.g., unsupported operations or incompatibility with certain CUDA kernels).
+  
+  - **FP16 precision incompatibility**:
+    - GTX 1060 (SM61) architecture does not support FP16 inference in TensorRT, leading to runtime errors or degraded performance.
+  
+  - **ONNX shape mismatches**:
+    - Exported ONNX models initially had shape mismatches causing inference failures (particularly dynamic axes handling).
+
+- **Solution:**  
+  - Downgraded to a fully compatible TensorRT 8.6.1 and CUDA 12 combination after carefully reviewing NVIDIA documentation.
+  - Explicitly disabled FP16 precision, opting for FP32 to match GTX 1060's hardware constraints.
+  - Implemented dynamic axes (`torch.onnx.export`) to handle variable batch sizes and explicitly verified input/output tensor shapes during ONNX export and TensorRT inference setup.
+
+> **Lesson Learned:**  
+> Deployment with TensorRT requires careful consideration of hardware capabilities, software compatibility, and explicit shape management. Always cross-check hardware-specific limitations (precision formats, kernel support) early in deployment planning.
+
+---
+
+### 🛠 Additional Practical Insights & Troubleshooting:
+
+- **Initial Model Convergence Issues**:  
+  The CNN model initially exhibited poor convergence due to aggressive dropout usage and overly simplistic synthetic channel models. Removing unnecessary dropout layers and transitioning to more realistic channels (DeepMIMO) dramatically improved training stability and performance.
+
+- **ADC and IQ Imbalance Simulation Importance**:  
+  Including realistic hardware impairments (quantization, IQ imbalance) was critical in bridging the gap between ideal simulation and practical deployment scenarios, significantly boosting model robustness and accuracy.
+
+- **ONNX Export Robustness**:  
+  During ONNX export, explicitly defining input/output node names and dynamic axes reduced ambiguity and facilitated smoother TensorRT inference integration.
+
+---
+
 
 ## 📁 Project Structure
 
