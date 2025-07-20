@@ -340,28 +340,56 @@ Throughout the CSI estimation project, several technical issues arose during dat
 > Introducing realistic impairments and structured variability forces ML models to generalize more effectively, enabling significant improvements over classical benchmarks like MMSE.
 
 ---
+## 4️⃣ TensorRT and ONNX Deployment Debug Story (GTX 1060, CUDA 12)
 
-### 4️⃣ TensorRT and ONNX Compatibility Issues (GTX 1060, CUDA 12)
+### Challenge & How I Discovered the Issues
 
-- **Challenge:**  
-  Exporting and running the CNN model on TensorRT posed several compatibility problems specific to the GTX 1060 (SM61 architecture) environment:
-  
-  - **TensorRT and CUDA version incompatibility**: 
-    - CUDA 12 environment initially conflicted with TensorRT (e.g., unsupported operations or incompatibility with certain CUDA kernels).
-  
-  - **FP16 precision incompatibility**:
-    - GTX 1060 (SM61) architecture does not support FP16 inference in TensorRT, leading to runtime errors or degraded performance.
-  
-  - **ONNX shape mismatches**:
-    - Exported ONNX models initially had shape mismatches causing inference failures (particularly dynamic axes handling).
+During deployment of my CNN model with TensorRT and ONNX on a GTX 1060 (SM61, Pascal), I encountered several real-world issues:
 
+---
+
+#### TensorRT and CUDA Version Alignment
+
+- **Problem:**  
+  My initial environment (CUDA 12 + TensorRT) failed to build the engine or threw unsupported kernel errors.
+- **Discovery:**  
+  Engine conversion failed with vague error messages. After searching the error codes and checking NVIDIA’s documentation, I realized it was a version compatibility problem.
 - **Solution:**  
-  - Downgraded to a fully compatible TensorRT 8.6.1 and CUDA 12 combination after carefully reviewing NVIDIA documentation.
-  - Explicitly disabled FP16 precision, opting for FP32 to match GTX 1060's hardware constraints.
-  - Implemented dynamic axes (`torch.onnx.export`) to handle variable batch sizes and explicitly verified input/output tensor shapes during ONNX export and TensorRT inference setup.
+  I matched CUDA 12 with TensorRT 8.6.1 as per the NVIDIA compatibility matrix, which fixed all engine build and kernel support errors.
+
+---
+
+#### FP16 Precision Fallback
+
+- **Problem:**  
+  After enabling FP16 (both in code and with trtexec --fp16), inference speed showed no improvement at all.
+- **Discovery:**  
+  Suspecting a problem, I enabled verbose TensorRT logs (trtexec --verbose). The logs showed:  
+  `Requested precision FP16 is not supported for this layer, falling back to FP32.`  
+  This revealed that GTX 1060 hardware doesn't support FP16 acceleration.
+- **Solution:**  
+  I disabled FP16 mode, enforced FP32 inference, and made a clear note to the team: Pascal GPUs do not benefit from FP16 in TensorRT.
+
+---
+
+#### ONNX Dynamic Axes and Batch Size Issue
+
+- **Problem:**  
+  The exported ONNX model only worked for batch size = 1. When running inference with batch >1, it failed with input shape errors.
+- **Discovery:**  
+  The error messages pointed to a shape mismatch. I checked my ONNX export code and realized I hadn't set dynamic_axes. ONNX by default freezes the batch size if not specified.
+- **Solution:**  
+  I updated the ONNX export script to include:  
+  `dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}}`  
+  After this fix, the ONNX model could accept any batch size, and deployment became much more flexible.
+
+---
 
 > **Lesson Learned:**  
-> Deployment with TensorRT requires careful consideration of hardware capabilities, software compatibility, and explicit shape management. Always cross-check hardware-specific limitations (precision formats, kernel support) early in deployment planning.
+> Deployment on edge devices requires more than just model export; it’s vital to align CUDA/TensorRT versions, respect hardware precision limits, and set up dynamic axes for flexible batch processing.  
+> Always read runtime logs and test real inference performance, not just rely on flag settings.  
+> Explicitly managing input/output shapes during ONNX export avoids hidden batch size issues that can break downstream deployment.
+
 
 ---
 
